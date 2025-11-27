@@ -1,145 +1,175 @@
 import streamlit as st
-import pandas as pd
 import numpy as np
-from sklearn.pipeline import Pipeline
-from sklearn.preprocessing import StandardScaler, OneHotEncoder
-from sklearn.compose import ColumnTransformer
-from sklearn.ensemble import RandomForestClassifier
-import warnings
-warnings.filterwarnings('ignore')
-import os
-import joblib
+import pandas as pd
+from sklearn.ensemble import IsolationForest
+import plotly.graph_objects as go
 
-st.set_page_config(page_title="Cloud Anomaly Detection", layout="wide")
+st.set_page_config(page_title="Cloud Anomaly Detector", layout="wide", initial_sidebar_state="expanded")
 
+# Initialize session state for parameters
+if 'cpu' not in st.session_state:
+    st.session_state.cpu = 50
+if 'memory' not in st.session_state:
+    st.session_state.memory = 50
+if 'network' not in st.session_state:
+    st.session_state.network = 500
+if 'power' not in st.session_state:
+    st.session_state.power = 250
+
+# Title
+st.markdown("# ☁ Cloud Resource Anomaly Detection System")
+st.markdown("### Real-time Anomaly Detection with Interactive Parameters")
+
+# Train a simple anomaly detection model
 @st.cache_resource
-def load_model():
-    model_path = 'best_cloud_anomaly_model.pkl'
-    if os.path.exists(model_path):
-        return joblib.load(model_path)
+def train_model():
+    np.random.seed(42)
+    normal_data = np.random.normal(loc=[50, 50, 500, 250], scale=[15, 15, 150, 75], size=(500, 4))
+    iso_forest = IsolationForest(contamination=0.1, random_state=42)
+    iso_forest.fit(normal_data)
+    return iso_forest, normal_data
+
+model, training_data = train_model()
+
+# Sidebar for parameters
+st.sidebar.markdown("## 🔫 Input Parameters")
+st.sidebar.markdown("Adjust cloud resource parameters to detect anomalies")
+
+cpu = st.sidebar.slider("CPU Usage (%)", 0, 100, st.session_state.cpu, step=1)
+st.session_state.cpu = cpu
+
+memory = st.sidebar.slider("Memory Usage (%)", 0, 100, st.session_state.memory, step=1)
+st.session_state.memory = memory
+
+network = st.sidebar.slider("Network Traffic (Mbps)", 0, 1000, st.session_state.network, step=10)
+st.session_state.network = network
+
+power = st.sidebar.slider("Power Consumption (W)", 0, 500, st.session_state.power, step=5)
+st.session_state.power = power
+
+# Make prediction
+test_input = np.array([[cpu, memory, network, power]])
+anomaly_score = model.decision_function(test_input)[0]
+prediction = model.predict(test_input)[0]
+
+# Main content area with columns
+col1, col2 = st.columns([2, 1])
+
+with col1:
+    st.markdown("## 📊 Anomaly Detection Result")
+    
+    # Normalize the anomaly score for display (higher negative = more anomalous)
+    anomaly_percentage = min(100, max(0, int((-anomaly_score + 2) * 25)))
+    
+    # Create visual indicator
+    if prediction == -1:
+        st.markdown(f"""<div style='background-color: #ff4444; padding: 20px; border-radius: 10px; text-align: center;'>
+            <h1 style='color: white; margin: 0;'>⚠️ ANOMALY DETECTED</h1>
+            <p style='color: white; font-size: 18px; margin: 10px 0 0 0;'>Risk Level: {anomaly_percentage}%</p>
+        </div>""", unsafe_allow_html=True)
+        st.error(f"**This resource configuration is ANOMALOUS!**\n\nAnomaly Score: {-anomaly_score:.2f}")
     else:
-        st.warning("Model file not found. Using demo model.")
-        return create_demo_model()
+        st.markdown(f"""<div style='background-color: #44aa44; padding: 20px; border-radius: 10px; text-align: center;'>
+            <h1 style='color: white; margin: 0;'>✓ NORMAL</h1>
+            <p style='color: white; font-size: 18px; margin: 10px 0 0 0;'>Risk Level: {anomaly_percentage}%</p>
+        </div>""", unsafe_allow_html=True)
+        st.success(f"**This resource configuration is NORMAL.**\n\nAnomaly Score: {-anomaly_score:.2f}")
 
-def create_demo_model():
-    """Creates a demo model for testing"""
-    X_train = pd.DataFrame({
-        'cpu_usage': np.random.rand(100)*100,
-        'memory_usage': np.random.rand(100)*100,
-        'network_traffic': np.random.rand(100)*1000,
-        'power_consumption': np.random.rand(100)*500,
-        'num_executed_instructions': np.random.rand(100)*10000,
-        'execution_time': np.random.rand(100)*100,
-        'energy_efficiency': np.random.rand(100),
-        'task_type': np.random.choice(['compute','io','network'], 100),
-        'task_priority': np.random.choice(['low','medium','high'], 100),
-        'task_status': np.random.choice(['completed','running','waiting'], 100),
-        'hour': np.random.randint(0, 24, 100),
-        'day': np.random.randint(1, 32, 100),
-        'month': np.random.randint(1, 13, 100),
-        'weekday': np.random.randint(0, 7, 100),
-    })
-    y_train = np.random.choice([0, 1], 100, p=[0.94, 0.06])
+with col2:
+    st.markdown("## 🔍 Key Metrics")
+    st.metric("CPU", f"{cpu}%")
+    st.metric("Memory", f"{memory}%")
+    st.metric("Network", f"{network} Mbps")
+    st.metric("Power", f"{power} W")
+
+# Visualization section
+st.markdown("---")
+st.markdown("## 📊 Visualization & Analysis")
+
+viz_col1, viz_col2 = st.columns(2)
+
+with viz_col1:
+    st.markdown("### Anomaly Score Gauge")
     
-    num_cols = ['cpu_usage', 'memory_usage', 'network_traffic', 'power_consumption',
-                'num_executed_instructions', 'execution_time', 'energy_efficiency',
-                'hour', 'day', 'month', 'weekday']
-    cat_cols = ['task_type', 'task_priority', 'task_status']
+    fig = go.Figure(go.Indicator(
+        mode="gauge+number+delta",
+        value=anomaly_percentage,
+        title={'text': "Anomaly Risk %"},
+        delta={'reference': 50},
+        gauge={
+            'axis': {'range': [0, 100]},
+            'bar': {'color': "darkblue"},
+            'steps': [
+                {'range': [0, 30], 'color': "lightgreen"},
+                {'range': [30, 70], 'color': "lightyellow"},
+                {'range': [70, 100], 'color': "lightcoral"}],
+            'threshold': {
+                'line': {'color': "red", 'width': 4},
+                'thickness': 0.75,
+                'value': 50}}
+    ))
+    fig.update_layout(height=400)
+    st.plotly_chart(fig, use_container_width=True)
+
+with viz_col2:
+    st.markdown("### Current vs Normal Range")
     
-    preprocessor = ColumnTransformer([
-        ('num', StandardScaler(), num_cols),
-        ('cat', OneHotEncoder(handle_unknown='ignore', sparse_output=False), cat_cols)
+    categories = ['CPU', 'Memory', 'Network', 'Power']
+    current_normalized = [cpu, memory, min(network/10, 100), min(power/5, 100)]
+    normal_mean = [50, 50, 50, 50]
+    
+    fig = go.Figure(data=[
+        go.Bar(name='Normal Range', x=categories, y=normal_mean, marker_color='lightblue'),
+        go.Bar(name='Current Value', x=categories, y=current_normalized, marker_color='coral')
     ])
-    
-    pipe = Pipeline([
-        ('prep', preprocessor),
-        ('clf', RandomForestClassifier(n_estimators=50, random_state=42))
-    ])
-    
-    pipe.fit(X_train, y_train)
-    return pipe
+    fig.update_layout(barmode='group', height=400)
+    st.plotly_chart(fig, use_container_width=True)
 
-model = load_model()
+# Detailed information
+st.markdown("---")
+st.markdown("## 📊 Detailed Information")
 
-st.title("☁ Cloud Anomaly Detection System")
-st.markdown("Detect anomalies in cloud resource usage using ML")
+info_col1, info_col2, info_col3 = st.columns(3)
 
-tab1, tab2, tab3 = st.tabs(["Single Prediction", "Batch Prediction", "Model Info"])
+with info_col1:
+    st.info(f"""**CPU Usage**: {cpu}%
+    - Normal: 30-70%
+    - Status: {'🟢 OK' if 30 <= cpu <= 70 else '🔴 Alert' if cpu > 80 else '🟡 Warning'}""")
 
-with tab1:
-    st.header("Analyze Individual Cloud Resource")
-    col1, col2 = st.columns(2)
-    
-    with col1:
-        cpu_usage = st.slider("CPU Usage (%)", 0.0, 100.0, 50.0)
-        memory_usage = st.slider("Memory Usage (%)", 0.0, 100.0, 50.0)
-        network_traffic = st.slider("Network Traffic (Mbps)", 0.0, 1000.0, 500.0)
-        power_consumption = st.slider("Power Consumption (W)", 0.0, 500.0, 250.0)
-    
-    with col2:
-        num_instructions = st.slider("Num Executed Instructions", 0.0, 10000.0, 5000.0)
-        execution_time = st.slider("Execution Time (ms)", 0.0, 100.0, 50.0)
-        energy_efficiency = st.slider("Energy Efficiency", 0.0, 1.0, 0.5)
-        task_type = st.selectbox("Task Type", ["compute", "io", "network"])
-    
-    task_priority = st.selectbox("Task Priority", ["low", "medium", "high"])
-    task_status = st.selectbox("Task Status", ["completed", "running", "waiting"])
-    hour = st.slider("Hour", 0, 23, 12)
-    day = st.slider("Day", 1, 31, 15)
-    month = st.slider("Month", 1, 12, 6)
-    weekday = st.slider("Weekday (0=Mon)", 0, 6, 3)
-    
-    if st.button("Predict", key="predict_single"):
-        input_data = pd.DataFrame([{
-            'cpu_usage': cpu_usage, 'memory_usage': memory_usage,
-            'network_traffic': network_traffic, 'power_consumption': power_consumption,
-            'num_executed_instructions': num_instructions, 'execution_time': execution_time,
-            'energy_efficiency': energy_efficiency, 'task_type': task_type,
-            'task_priority': task_priority, 'task_status': task_status,
-            'hour': hour, 'day': day, 'month': month, 'weekday': weekday
-        }])
-        
-        try:
-            prediction = model.predict(input_data)[0]
-            probability = model.predict_proba(input_data)[0][1]
-            
-            col_pred1, col_pred2 = st.columns(2)
-            with col_pred1:
-                if prediction == 1:
-                    st.error("⚠ ANOMALY DETECTED", icon="⚠")
-                else:
-                    st.success("✓ Normal", icon="✓")
-            with col_pred2:
-                st.metric("Anomaly Probability", f"{probability*100:.2f}%")
-        except Exception as e:
-            st.error(f"Error: {str(e)}")
+with info_col2:
+    st.info(f"""**Memory Usage**: {memory}%
+    - Normal: 30-70%
+    - Status: {'🟢 OK' if 30 <= memory <= 70 else '🔴 Alert' if memory > 80 else '🟡 Warning'}""")
 
-with tab2:
-    st.header("Batch Anomaly Detection")
-    uploaded_file = st.file_uploader("Upload CSV file", type="csv")
-    
-    if uploaded_file is not None:
-        df = pd.read_csv(uploaded_file)
-        st.write(f"Loaded {len(df)} records")
-        
-        if st.button("Predict Batch", key="predict_batch"):
-            try:
-                predictions = model.predict(df)
-                probabilities = model.predict_proba(df)[:, 1]
-                
-                results_df = pd.DataFrame({
-                    'Prediction': ['Anomaly' if p == 1 else 'Normal' for p in predictions],
-                    'Anomaly_Probability': probabilities
-                })
-                
-                st.dataframe(results_df)
-                st.download_button("Download Results", results_df.to_csv(index=False), "results.csv")
-            except Exception as e:
-                st.error(f"Error: {str(e)}")
+with info_col3:
+    st.info(f"""**Network Traffic**: {network} Mbps
+    - Normal: 300-700 Mbps
+    - Status: {'🟢 OK' if 300 <= network <= 700 else '🔴 Alert' if network > 800 else '🟡 Warning'}""")
 
-with tab3:
-    st.header("Model Information")
-    st.write("**Model Type:** LightGBM/RandomForest Classifier")
-    st.write("**Features:** CPU, Memory, Network Traffic, Power, Time, Energy, Task Info")
-    st.write("**Status:** ✓ Running (Demo Model Active)")
-    st.write("**Note:** Upload your .pkl model file to use your trained model")
+# Real-time data table
+st.markdown("---")
+st.markdown("## 📋 Data Summary")
+
+data = {
+    'Metric': ['CPU Usage', 'Memory Usage', 'Network Traffic', 'Power Consumption'],
+    'Current Value': [f'{cpu}%', f'{memory}%', f'{network} Mbps', f'{power} W'],
+    'Normal Range': ['30-70%', '30-70%', '300-700 Mbps', '200-300 W'],
+    'Status': [
+        '🟢 Normal' if 30 <= cpu <= 70 else '🔴 Anomaly',
+        '🟢 Normal' if 30 <= memory <= 70 else '🔴 Anomaly',
+        '🟢 Normal' if 300 <= network <= 700 else '🔴 Anomaly',
+        '🟢 Normal' if 200 <= power <= 300 else '🔴 Anomaly'
+    ]
+}
+
+df = pd.DataFrame(data)
+st.dataframe(df, use_container_width=True)
+
+st.markdown("---")
+st.markdown("## 🌐 How to Use")
+st.markdown("""
+1. **Adjust Parameters**: Use the sliders in the sidebar to change cloud resource values
+2. **View Results**: The anomaly detection result updates in real-time
+3. **Analyze Data**: Check the visualizations and metrics to understand anomalies
+4. **Monitor Status**: Green = Normal, Yellow = Warning, Red = Anomaly
+""")
