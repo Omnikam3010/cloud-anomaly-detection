@@ -1,21 +1,67 @@
 import streamlit as st
-import joblib
 import pandas as pd
 import numpy as np
+from sklearn.pipeline import Pipeline
 from sklearn.preprocessing import StandardScaler, OneHotEncoder
 from sklearn.compose import ColumnTransformer
+from sklearn.ensemble import RandomForestClassifier
 import warnings
 warnings.filterwarnings('ignore')
+import os
+import joblib
 
 st.set_page_config(page_title="Cloud Anomaly Detection", layout="wide")
 
 @st.cache_resource
 def load_model():
-    return joblib.load('best_cloud_anomaly_model.pkl')
+    model_path = 'best_cloud_anomaly_model.pkl'
+    if os.path.exists(model_path):
+        return joblib.load(model_path)
+    else:
+        st.warning("Model file not found. Using demo model.")
+        return create_demo_model()
+
+def create_demo_model():
+    """Creates a demo model for testing"""
+    X_train = pd.DataFrame({
+        'cpu_usage': np.random.rand(100)*100,
+        'memory_usage': np.random.rand(100)*100,
+        'network_traffic': np.random.rand(100)*1000,
+        'power_consumption': np.random.rand(100)*500,
+        'num_executed_instructions': np.random.rand(100)*10000,
+        'execution_time': np.random.rand(100)*100,
+        'energy_efficiency': np.random.rand(100),
+        'task_type': np.random.choice(['compute','io','network'], 100),
+        'task_priority': np.random.choice(['low','medium','high'], 100),
+        'task_status': np.random.choice(['completed','running','waiting'], 100),
+        'hour': np.random.randint(0, 24, 100),
+        'day': np.random.randint(1, 32, 100),
+        'month': np.random.randint(1, 13, 100),
+        'weekday': np.random.randint(0, 7, 100),
+    })
+    y_train = np.random.choice([0, 1], 100, p=[0.94, 0.06])
+    
+    num_cols = ['cpu_usage', 'memory_usage', 'network_traffic', 'power_consumption',
+                'num_executed_instructions', 'execution_time', 'energy_efficiency',
+                'hour', 'day', 'month', 'weekday']
+    cat_cols = ['task_type', 'task_priority', 'task_status']
+    
+    preprocessor = ColumnTransformer([
+        ('num', StandardScaler(), num_cols),
+        ('cat', OneHotEncoder(handle_unknown='ignore', sparse_output=False), cat_cols)
+    ])
+    
+    pipe = Pipeline([
+        ('prep', preprocessor),
+        ('clf', RandomForestClassifier(n_estimators=50, random_state=42))
+    ])
+    
+    pipe.fit(X_train, y_train)
+    return pipe
 
 model = load_model()
 
-st.title("\u2601 Cloud Anomaly Detection System")
+st.title("☁ Cloud Anomaly Detection System")
 st.markdown("Detect anomalies in cloud resource usage using ML")
 
 tab1, tab2, tab3 = st.tabs(["Single Prediction", "Batch Prediction", "Model Info"])
@@ -60,9 +106,9 @@ with tab1:
             col_pred1, col_pred2 = st.columns(2)
             with col_pred1:
                 if prediction == 1:
-                    st.error(f"\u26a0 ANOMALY DETECTED", icon="⚠")
+                    st.error("⚠ ANOMALY DETECTED", icon="⚠")
                 else:
-                    st.success("\u2713 Normal", icon="✓")
+                    st.success("✓ Normal", icon="✓")
             with col_pred2:
                 st.metric("Anomaly Probability", f"{probability*100:.2f}%")
         except Exception as e:
@@ -93,7 +139,7 @@ with tab2:
 
 with tab3:
     st.header("Model Information")
-    st.write("**Model Type:** LightGBM Classifier")
-    st.write("**Features:** CPU Usage, Memory, Network Traffic, Power, Execution Time, Energy Efficiency, Task Type/Priority/Status, Time features")
-    st.write("**Accuracy:** ~75%")
-    st.write("**Use Case:** Detect anomalies in cloud resource configurations")
+    st.write("**Model Type:** LightGBM/RandomForest Classifier")
+    st.write("**Features:** CPU, Memory, Network Traffic, Power, Time, Energy, Task Info")
+    st.write("**Status:** ✓ Running (Demo Model Active)")
+    st.write("**Note:** Upload your .pkl model file to use your trained model")
